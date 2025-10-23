@@ -24,7 +24,8 @@ class DocumentParser:
 
     def parse(self) -> DocumentTree:
         """Parse the document body into high-level block elements."""
-        root = self._package.document_xml.getroot()
+        document_tree = self._package.require_document_xml()
+        root = document_tree.getroot()
         body = root.find("w:body", Namespaces.WORD)
         if body is None:
             LOGGER.warning("document.xml missing body element")

@@ -20,7 +20,7 @@ LOGGER = get_logger(__name__)
 def build_document_model(docx_path: Path) -> DocumentModel:
     """Load a DOCX package, parse WordprocessingML, and build an internal model."""
     package = DocxPackage.load(docx_path)
-    styles = StylesParser(package.styles_xml, package.numbering_xml).parse()
+    styles = StylesParser(package.require_styles_xml(), package.get_numbering_xml()).parse()
     document_tree = DocumentParser(package, styles).parse()
     layout_model = LayoutCalculator(styles).calculate(document_tree)
     return DocumentModel(styles=styles, layout=layout_model)
