@@ -1,0 +1,10 @@
+[project]
+name = "docx-renderer"
+version = "0.1.0"
+description = "DOCX to universal flattened layout and renderer pipeline"
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = []
+
+[tool.pytest.ini_options]
+addopts = "-ra"
