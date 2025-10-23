@@ -43,7 +43,7 @@ class DocumentParser:
         body = root.find("w:body", Namespaces.WORD)
         if body is None:
             LOGGER.warning("document.xml missing body element")
-            return DocumentTree(blocks=[])
+            return DocumentTree(sections=[])
 
         blocks = []
         for child in list(body):
@@ -57,7 +57,11 @@ class DocumentParser:
                 continue
             else:
                 LOGGER.debug("Skipping unsupported element: %s", tag)
-        return DocumentTree(blocks=blocks)
+        
+        # Parse sections with headers/footers
+        from docx_renderer.parser.section_parser import SectionParser
+        section_parser = SectionParser(self._package, self._styles, self._numbering)
+        return section_parser.parse_sections(blocks)
 
     def _parse_paragraph(self, paragraph_el: ET.Element) -> ParagraphElement:
         runs: List[RunFragment] = []

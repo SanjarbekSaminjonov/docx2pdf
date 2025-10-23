@@ -96,6 +96,10 @@ class DocxPackage:
         self.xml_cache[name] = tree
         return tree
 
+    def get_part_data(self, name: str) -> Optional[bytes]:
+        """Get binary data for a part by name."""
+        return self.raw_parts.get(name)
+
     # ------------------------------------------------------------------
     # Internal bootstrap
     def _initialize_caches(self) -> None:

@@ -11,7 +11,9 @@ class LayoutCalculatorTest(unittest.TestCase):
 
     def test_blocks_increment_vertical_cursor(self) -> None:
         paragraph = ParagraphElement(runs=[RunFragment(text="Hello")], style_id=None, properties={})
-        tree = DocumentTree(blocks=[paragraph, paragraph])
+        from docx_renderer.model.elements import DocumentSection, SectionProperties
+        section = DocumentSection(blocks=[paragraph, paragraph], properties=SectionProperties())
+        tree = DocumentTree(sections=[section])
         catalog = StylesCatalog({})
         layout = LayoutCalculator(catalog).calculate(tree)
         self.assertEqual(len(layout.boxes), 2)

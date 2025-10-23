@@ -8,7 +8,9 @@ from docx_renderer.model.document_model import DocumentModel
 from docx_renderer.parser.docx_loader import DocxPackage
 from docx_renderer.parser.document_parser import DocumentParser
 from docx_renderer.parser.layout_calculator import LayoutCalculator
+from docx_renderer.parser.media_extractor import extract_media_from_package
 from docx_renderer.parser.numbering_parser import NumberingParser
+from docx_renderer.parser.rels_parser import Relationships
 from docx_renderer.parser.styles_parser import StylesParser
 from docx_renderer.renderer.html_renderer import HtmlRenderer
 from docx_renderer.renderer.pdf_renderer import PdfRenderer
@@ -21,11 +23,13 @@ LOGGER = get_logger(__name__)
 def build_document_model(docx_path: Path) -> DocumentModel:
     """Load a DOCX package, parse WordprocessingML, and build an internal model."""
     package = DocxPackage.load(docx_path)
+    relationships = Relationships.from_package(package.raw_parts)
+    media_catalog = extract_media_from_package(package, relationships)
     styles = StylesParser(package.require_styles_xml(), package.get_numbering_xml()).parse()
     numbering = NumberingParser(package.get_numbering_xml()).parse()
     document_tree = DocumentParser(package, styles, numbering).parse()
     layout_model = LayoutCalculator(styles).calculate(document_tree)
-    return DocumentModel(styles=styles, layout=layout_model, numbering=numbering)
+    return DocumentModel(styles=styles, layout=layout_model, numbering=numbering, media=media_catalog)
 
 
 def render_outputs(model: DocumentModel, output_dir: Path, *, html: bool = True, pdf: bool = False) -> None:

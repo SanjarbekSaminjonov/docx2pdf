@@ -4,7 +4,7 @@ from __future__ import annotations
 import posixpath
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Dict, Iterable, Mapping, Optional, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 from xml.etree import ElementTree as ET
 
 from docx_renderer.utils.xml_utils import Namespaces, parse_xml
@@ -89,6 +89,15 @@ class Relationships:
             numbering=self._filter_by_type(doc_rels, RELTYPE_NUMBERING),
             hyperlinks=self._filter_by_type(doc_rels, RELTYPE_HYPERLINK),
         )
+    
+    def get_targets_by_type(self, rel_types: List[str]) -> Dict[str, str]:
+        """Get relationship ID to target mapping for given relationship types."""
+        result = {}
+        for rel in self.iter_all():
+            if rel.rel_type in rel_types:
+                target = rel.resolved_target or rel.target
+                result[rel.r_id] = target
+        return result
 
     @classmethod
     def _parse_relationship_part(

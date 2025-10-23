@@ -130,8 +130,69 @@ class LayoutModel:
 
 
 @dataclass(slots=True)
+class SectionProperties:
+    """Section-level configuration including headers, footers, and page setup."""
+
+    page_width: Optional[int] = None
+    page_height: Optional[int] = None
+    margin_top: Optional[int] = None
+    margin_bottom: Optional[int] = None
+    margin_left: Optional[int] = None
+    margin_right: Optional[int] = None
+    margin_header: Optional[int] = None
+    margin_footer: Optional[int] = None
+    orientation: Optional[str] = None
+    header_default: Optional["HeaderFooterContent"] = None
+    header_first: Optional["HeaderFooterContent"] = None
+    header_even: Optional["HeaderFooterContent"] = None
+    footer_default: Optional["HeaderFooterContent"] = None
+    footer_first: Optional["HeaderFooterContent"] = None
+    footer_even: Optional["HeaderFooterContent"] = None
+    title_page: bool = False
+    raw_properties: Dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class HeaderFooterContent:
+    """Content of a header or footer."""
+
+    r_id: str
+    blocks: List[BlockElement] = field(default_factory=list)
+    raw_xml: Optional[str] = None
+
+
+@dataclass(slots=True)
+class DocumentSection:
+    """Document section with content and section properties."""
+
+    blocks: List[BlockElement]
+    properties: SectionProperties
+
+
+@dataclass(slots=True)
 class DocumentTree:
     """Structured representation prior to layout calculation."""
 
-    blocks: List[BlockElement]
+    sections: List[DocumentSection] = field(default_factory=list)
+    metadata: Dict[str, object] = field(default_factory=dict)
+
+    @property
+    def blocks(self) -> List[BlockElement]:
+        """Backward compatibility: return all blocks from all sections."""
+        all_blocks = []
+        for section in self.sections:
+            all_blocks.extend(section.blocks)
+        return all_blocks
+
+
+@dataclass(slots=True)
+class MediaAsset:
+    """Represents a media asset (image, font, etc.) from DOCX package."""
+
+    relationship_id: str
+    target_path: str
+    media_type: str
+    binary_data: bytes
+    base64_data: str
+    size: int
     metadata: Dict[str, object] = field(default_factory=dict)
