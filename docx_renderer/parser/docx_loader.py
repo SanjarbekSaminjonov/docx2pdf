@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Mapping, Optional
 from xml.etree import ElementTree as ET
 
-from docx_renderer.parser.rels_parser import Relationships
+from docx_renderer.parser.rels_parser import DocumentRelationshipSummary, Relationships
 from docx_renderer.utils.logger import get_logger
 from docx_renderer.utils.xml_utils import parse_xml
 
@@ -124,6 +124,10 @@ class DocxPackage:
         self.media = {
             name: data for name, data in self.raw_parts.items() if name.startswith("word/media/")
         }
+
+    @property
+    def document_relationships(self) -> DocumentRelationshipSummary:
+        return self.relationships.document_summary()
 
     def _parse_required(self, name: str) -> ET.ElementTree:
         tree = self._parse_optional(name)

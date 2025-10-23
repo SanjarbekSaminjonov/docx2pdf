@@ -16,7 +16,7 @@ class MediaResolver:
     def resolve_image(self, part_name: str, r_id: str) -> Optional[bytes]:
         """Return binary data for an image referenced by a relationship id."""
         rel = self._relationships.find(part_name, r_id)
-        if rel is None:
+        if rel is None or rel.is_external:
             return None
-        target = f"word/{rel.target}" if not rel.target.startswith("word/") else rel.target
+        target = rel.resolved_target or rel.target
         return self._media_map.get(target)
