@@ -12,6 +12,14 @@ class RunFragment:
     text: str
     style_id: Optional[str] = None
     properties: Dict[str, object] = field(default_factory=dict)
+    controls: List[Dict[str, object]] = field(default_factory=list)
+    drawing: Optional["DrawingReference"] = None
+    footnote_reference: Optional[int] = None
+    endnote_reference: Optional[int] = None
+    field_code: Optional[str] = None
+    hyperlink_id: Optional[str] = None
+    hyperlink_anchor: Optional[str] = None
+    hyperlink_target: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -21,6 +29,9 @@ class ParagraphElement:
     runs: List[RunFragment]
     style_id: Optional[str]
     properties: Dict[str, object] = field(default_factory=dict)
+    numbering: Optional["NumberingInfo"] = None
+    bookmarks: List["Bookmark"] = field(default_factory=list)
+    annotations: Dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -57,6 +68,41 @@ class ImageElement:
     width_emu: Optional[int] = None
     height_emu: Optional[int] = None
     properties: Dict[str, object] = field(default_factory=dict)
+    data: Optional[bytes] = None
+
+
+@dataclass(slots=True)
+class DrawingReference:
+    """Represents a drawing (usually an image) embedded inside a run."""
+
+    r_id: str
+    target: Optional[str]
+    description: Optional[str]
+    width_emu: Optional[int]
+    height_emu: Optional[int]
+    inline: bool
+    data: Optional[bytes] = None
+
+
+@dataclass(slots=True)
+class Bookmark:
+    """Bookmark start marker embedded within a paragraph."""
+
+    bookmark_id: int
+    name: str
+
+
+@dataclass(slots=True)
+class NumberingInfo:
+    """Resolved numbering reference applied to a paragraph."""
+
+    num_id: int
+    level: int
+    abstract_num_id: Optional[int] = None
+    start: Optional[int] = None
+    format: Optional[str] = None
+    level_text: Optional[str] = None
+    alignment: Optional[str] = None
 
 
 BlockElement = ParagraphElement | TableElement | ImageElement

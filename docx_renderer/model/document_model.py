@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from docx_renderer.model.elements import LayoutModel
+from docx_renderer.model.numbering_model import NumberingCatalog
 from docx_renderer.model.style_model import StylesCatalog
 
 
@@ -14,4 +15,5 @@ class DocumentModel:
 
     styles: StylesCatalog
     layout: LayoutModel
+    numbering: Optional[NumberingCatalog] = None
     metadata: Optional[dict] = None
