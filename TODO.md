@@ -26,7 +26,7 @@ To'liq loyiha ishlashi uchun quyidagi 3 ta logical service kerak bo'ladi:
 - [x] Text flow va line breaking - matn qatorlarini to'g'ri bo'lish, word wrapping (hyphenation keyingi bosqich).
 - [x] Image va drawing positioning - rasm va shakllarning text bilan nisbati va wrapping behavior (bazaviy inline/square).
 - [x] Advanced wrap variantlari (tight/through/behind-text) va floating anchorlar.
-- [ ] Header/footer layout - sahifa boshi va oxirida joylashuvchi elementlarning pozitsiyalari.
+- [x] Header/footer layout - sahifa boshi va oxirida joylashuvchi elementlarning pozitsiyalari (bazaviy default header/footer).
 - [ ] Z-index va layering - elementlarning bir-birining ustiga chiqishi va qatlamlash tartibini boshqarish.
 - [ ] Font metrics va text measurement - har xil font o'lchamlari va text width/height hisoblash.
 - [ ] Layout caching va optimization - hisoblangan layout ma'lumotlarini cache qilish va performance optimization.

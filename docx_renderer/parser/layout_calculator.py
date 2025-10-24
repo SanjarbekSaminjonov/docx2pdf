@@ -9,6 +9,7 @@ from docx_renderer.model.elements import (
     DocumentTree,
     LayoutBox,
     LayoutModel,
+    HeaderFooterContent,
     ParagraphElement,
     SectionProperties,
     TableElement,
@@ -40,6 +41,8 @@ class LayoutContext:
     margin_bottom: float
     cursor_x: float
     cursor_y: float
+    header_margin: float = 0.0
+    footer_margin: float = 0.0
 
     @property
     def available_width(self) -> float:
@@ -85,14 +88,129 @@ class LayoutCalculator:
             context = self._build_context(section.properties)
             section_boxes: List[LayoutBox] = []
 
+            header_content = self._select_header_content(section.properties)
+            if header_content:
+                header_box = self._layout_header_footer(header_content, context, placement="header")
+                if header_box:
+                    boxes.append(header_box)
+                    section_boxes.append(header_box)
+
             for block in section.blocks:
                 box = self._layout_block(block, context)
                 boxes.append(box)
                 section_boxes.append(box)
 
+            footer_content = self._select_footer_content(section.properties)
+            if footer_content:
+                footer_box = self._layout_header_footer(footer_content, context, placement="footer")
+                if footer_box:
+                    boxes.append(footer_box)
+                    section_boxes.append(footer_box)
+
             pages.append(section_boxes)
 
         return LayoutModel(boxes=boxes, pages=pages)
+
+    def _select_header_content(self, properties: SectionProperties | None) -> Optional[HeaderFooterContent]:
+        if not isinstance(properties, SectionProperties):
+            return None
+        return properties.header_default or properties.header_first or properties.header_even
+
+    def _select_footer_content(self, properties: SectionProperties | None) -> Optional[HeaderFooterContent]:
+        if not isinstance(properties, SectionProperties):
+            return None
+        return properties.footer_default or properties.footer_first or properties.footer_even
+
+    def _layout_header_footer(
+        self,
+        content: HeaderFooterContent,
+        base_context: LayoutContext,
+        placement: str,
+    ) -> Optional[LayoutBox]:
+        if not content.blocks:
+            return None
+
+        if placement not in {"header", "footer"}:
+            return None
+
+        if placement == "header":
+            start = content_start = self._resolve_header_start(base_context)
+        else:
+            target_margin = base_context.footer_margin if base_context.footer_margin > 0 else base_context.margin_bottom
+            start = content_start = max(base_context.page_height - target_margin, 0.0)
+
+        working_context = LayoutContext(
+            page_width=base_context.page_width,
+            page_height=base_context.page_height,
+            margin_left=base_context.margin_left,
+            margin_right=base_context.margin_right,
+            margin_top=base_context.margin_top,
+            margin_bottom=base_context.margin_bottom,
+            cursor_x=base_context.margin_left,
+            cursor_y=content_start,
+            header_margin=base_context.header_margin,
+            footer_margin=base_context.footer_margin,
+        )
+
+        child_boxes: List[LayoutBox] = []
+        for block in content.blocks:
+            child_boxes.append(self._layout_block(block, working_context))
+
+        total_height = max(working_context.cursor_y - content_start, 0.0)
+
+        if placement == "header":
+            container_y = self._clamp_header_top(base_context, start, total_height)
+            offset = container_y - start
+        else:
+            container_y, offset = self._resolve_footer_position(base_context, start, total_height)
+
+        if offset:
+            for box in child_boxes:
+                box.y += offset
+
+        container = LayoutBox(
+            element_type=placement,
+            content={
+                "boxes": child_boxes,
+                "relationshipId": content.r_id,
+                "rawXml": content.raw_xml,
+            },
+            x=base_context.margin_left,
+            y=container_y,
+            width=base_context.available_width,
+            height=total_height,
+            style={
+                "type": placement,
+                "rId": content.r_id,
+            },
+        )
+
+        return container
+
+    def _resolve_header_start(self, context: LayoutContext) -> float:
+        default_start = context.margin_top * 0.5 if context.margin_top > 0 else 0.0
+        desired = context.header_margin if context.header_margin > 0 else default_start
+        max_within_margin = max(context.margin_top - DEFAULT_LINE_HEIGHT_PT, 0.0)
+        if max_within_margin > 0:
+            desired = min(desired, max_within_margin)
+        return max(desired, 0.0)
+
+    def _clamp_header_top(self, context: LayoutContext, start: float, height: float) -> float:
+        top_limit = max(context.margin_top - height, 0.0)
+        return min(start, top_limit) if top_limit > 0 else max(start, 0.0)
+
+    def _resolve_footer_position(self, context: LayoutContext, start: float, height: float) -> tuple[float, float]:
+        target_margin = context.footer_margin if context.footer_margin > 0 else context.margin_bottom
+        usable_bottom = context.page_height - target_margin
+        desired_top = usable_bottom - height
+        min_top = context.margin_top
+        max_top = context.page_height - context.margin_bottom
+        if desired_top < min_top:
+            desired_top = min_top
+        elif desired_top > max_top:
+            desired_top = max_top
+        offset = desired_top - start
+        return desired_top, offset
 
     # ------------------------------------------------------------------
     # Section helpers
@@ -120,6 +238,9 @@ class LayoutCalculator:
         margin_top = self._twips_to_points(getattr(properties, "margin_top", None), DEFAULT_MARGIN_PT)
         margin_bottom = self._twips_to_points(getattr(properties, "margin_bottom", None), DEFAULT_MARGIN_PT)
 
+        header_margin = self._twips_to_points(getattr(properties, "margin_header", None), 0.0)
+        footer_margin = self._twips_to_points(getattr(properties, "margin_footer", None), 0.0)
+
         return LayoutContext(
             page_width=page_width,
             page_height=page_height,
@@ -129,6 +250,8 @@ class LayoutCalculator:
             margin_bottom=margin_bottom,
             cursor_x=margin_left,
             cursor_y=margin_top,
+            header_margin=header_margin,
+            footer_margin=footer_margin,
         )
 
     # ------------------------------------------------------------------
@@ -386,6 +509,8 @@ class LayoutCalculator:
             margin_bottom=margin_bottom,
             cursor_x=margin_left,
             cursor_y=margin_top,
+            header_margin=parent_context.header_margin,
+            footer_margin=parent_context.footer_margin,
         )
 
         cell_boxes: List[LayoutBox] = []
