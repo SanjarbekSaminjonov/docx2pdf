@@ -15,10 +15,17 @@ To'liq loyiha ishlashi uchun quyidagi 3 ta logical service kerak bo'ladi:
 ### 2. Layout Calculator modulida qilinadigan ishlar:
 
 - [ ] `LayoutCalculator`ni kengaytirib, har bir element uchun (paragraph, run, table, image) aniq pozitsiya va o'lcham hisoblash.
-- [ ] Page layout va margin handling - sahifa o'lchamlari, chegaralar va section properties asosida layout hisoblash.
+	- [x] Paragraph bloklari uchun style-based spacing va indent bilan layout.
+	- [x] Jadval (table) elementlari uchun ustun/qatordan kelib chiqqan bazaviy o'lchamlar.
+	- [ ] Image/drawing elementlarini joylash va unsupported bloklarni kengaytirish.
+- [x] Page layout va margin handling - sahifa o'lchamlari, chegaralar va section properties asosida layout hisoblash.
 - [ ] Table layout engine - jadval ustunlari, qatorlari va cell'larning aniq o'lchamlari va pozitsiyalarini hisoblash.
-- [ ] Text flow va line breaking - matn qatorlarini to'g'ri bo'lish, hyphenation va word wrapping.
-- [ ] Image va drawing positioning - rasm va shakllarning text bilan nisbati va wrapping behavior.
+-  - [x] Cell padding, borderlarni hisoblash va auto-fit qoidalarini qo'llash.
+-  - [x] Cell ichidagi paragraph/layout hisobini rekurent tarzda chaqirish.
+-  - [x] Auto-fit, min/max column width, grid-span alignment (vertikal merge keyingi bosqichda).
+- [x] Text flow va line breaking - matn qatorlarini to'g'ri bo'lish, word wrapping (hyphenation keyingi bosqich).
+- [x] Image va drawing positioning - rasm va shakllarning text bilan nisbati va wrapping behavior (bazaviy inline/square).
+- [x] Advanced wrap variantlari (tight/through/behind-text) va floating anchorlar.
 - [ ] Header/footer layout - sahifa boshi va oxirida joylashuvchi elementlarning pozitsiyalari.
 - [ ] Z-index va layering - elementlarning bir-birining ustiga chiqishi va qatlamlash tartibini boshqarish.
 - [ ] Font metrics va text measurement - har xil font o'lchamlari va text width/height hisoblash.

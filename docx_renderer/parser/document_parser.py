@@ -110,6 +110,7 @@ class DocumentParser:
             for cell_el in row_el.findall("w:tc", Namespaces.WORD):
                 cell_content: List[BlockElement] = []
                 cell_props = self._extract_cell_properties(cell_el)
+                vertical_merge = self._extract_vertical_merge(cell_el)
                 
                 # Parse cell content (paragraphs, tables, etc.)
                 for child in list(cell_el):
@@ -121,6 +122,9 @@ class DocumentParser:
                     elif tag not in ["tcPr"]:  # Skip cell properties
                         LOGGER.debug("Skipping cell child element: %s", tag)
                 
+                if vertical_merge:
+                    cell_props["vMerge"] = vertical_merge
+
                 cells.append(TableCell(content=cell_content, properties=cell_props))
             
             rows.append(TableRow(cells=cells, properties=row_props))
@@ -346,6 +350,18 @@ class DocumentParser:
         if tc_pr is not None:
             props = self._serialize_properties_block(tc_pr)
         return props
+
+    def _extract_vertical_merge(self, cell_el: ET.Element) -> Optional[Dict[str, object]]:
+        tc_pr = cell_el.find("w:tcPr", Namespaces.WORD)
+        if tc_pr is None:
+            return None
+
+        vmerge_el = tc_pr.find("w:vMerge", Namespaces.WORD)
+        if vmerge_el is None:
+            return None
+
+        merged = self._serialize_node(vmerge_el)
+        return merged
 
     def _extract_numbering_info(self, paragraph_el: ET.Element) -> Optional[NumberingInfo]:
         """Extract numbering information from paragraph properties."""

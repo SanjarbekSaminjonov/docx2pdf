@@ -10,7 +10,7 @@ from xml.etree.ElementTree import Element, SubElement
 import zipfile
 import io
 
-from docx_renderer.main import build_document_model
+from main import build_document_model
 from docx_renderer.parser.docx_loader import DocxPackage
 from docx_renderer.model.document_model import DocumentModel
 
