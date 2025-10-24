@@ -1,8 +1,9 @@
 """Convert structured document blocks into absolutely positioned layout boxes."""
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from docx_renderer.model.elements import (
     DocumentSection,
@@ -27,6 +28,36 @@ DEFAULT_LINE_HEIGHT_PT = DEFAULT_FONT_SIZE_PT * 1.2
 DEFAULT_TABLE_CELL_PADDING_PT = 4.0
 DEFAULT_TABLE_BORDER_WIDTH_PT = 0.5
 EMU_PER_POINT = 12700.0
+
+LAYER_BODY_Z = 0
+LAYER_HEADER_Z = 50
+LAYER_FOOTER_Z = 50
+LAYER_FLOATING_Z = 100
+LAYER_FLOATING_FRONT_Z = 200
+LAYER_FLOATING_BEHIND_Z = -100
+
+WRAP_CACHE_LIMIT = 512
+
+CHAR_WIDTH_OVERRIDES: Dict[str, float] = {
+    " ": 0.33,
+    "\t": 4.0,
+    "\u3000": 1.0,
+    "-": 0.4,
+    "\u2013": 0.5,
+    "\u2014": 0.6,
+    "_": 0.5,
+}
+
+NARROW_CHARS = set(".,'`\"!|:;ilI[](){}")
+WIDE_CHARS = set("MWQ@&%#")
+DOUBLE_WIDTH_BLOCKS = (
+    (0x2E80, 0x2EFF),
+    (0x3000, 0x303F),
+    (0x3040, 0x30FF),
+    (0x3400, 0x4DBF),
+    (0x4E00, 0x9FFF),
+    (0xAC00, 0xD7AF),
+)
 
 
 @dataclass(slots=True)
@@ -75,6 +106,8 @@ class LayoutCalculator:
 
     def __init__(self, styles: StylesCatalog) -> None:
         self._styles = styles
+        self._wrap_cache: "OrderedDict[Tuple[str, float, float], Tuple[str, ...]]" = OrderedDict()
+        self._wrap_cache_limit = WRAP_CACHE_LIMIT
 
     # ------------------------------------------------------------------
     # Public API
@@ -83,43 +116,152 @@ class LayoutCalculator:
 
         boxes: List[LayoutBox] = []
         pages: List[Sequence[LayoutBox]] = []
+        page_index = 0
 
         for section in self._iter_sections(tree):
             context = self._build_context(section.properties)
-            section_boxes: List[LayoutBox] = []
-
-            header_content = self._select_header_content(section.properties)
-            if header_content:
-                header_box = self._layout_header_footer(header_content, context, placement="header")
-                if header_box:
-                    boxes.append(header_box)
-                    section_boxes.append(header_box)
+            current_page_boxes = self._start_new_page(section.properties, context, page_index, boxes)
 
             for block in section.blocks:
-                box = self._layout_block(block, context)
-                boxes.append(box)
-                section_boxes.append(box)
+                while True:
+                    start_cursor = context.cursor_y
+                    box = self._layout_block(block, context)
+                    page_limit = self._page_content_limit(context)
 
-            footer_content = self._select_footer_content(section.properties)
-            if footer_content:
-                footer_box = self._layout_header_footer(footer_content, context, placement="footer")
-                if footer_box:
-                    boxes.append(footer_box)
-                    section_boxes.append(footer_box)
+                    if box.y + box.height > page_limit and start_cursor != context.margin_top:
+                        context.cursor_y = start_cursor
 
-            pages.append(section_boxes)
+                        footer_box = self._layout_page_footer(section.properties, context, page_index)
+                        if footer_box:
+                            boxes.append(footer_box)
+                            footer_box.style["pageIndex"] = page_index
+                            current_page_boxes.append(footer_box)
+
+                        if current_page_boxes:
+                            pages.append(current_page_boxes)
+                        page_index += 1
+
+                        current_page_boxes = self._start_new_page(section.properties, context, page_index, boxes)
+                        continue
+
+                    box.style.setdefault("pageIndex", page_index)
+                    boxes.append(box)
+                    current_page_boxes.append(box)
+                    break
+
+            footer_box = self._layout_page_footer(section.properties, context, page_index)
+            if footer_box:
+                boxes.append(footer_box)
+                footer_box.style["pageIndex"] = page_index
+                current_page_boxes.append(footer_box)
+
+            if current_page_boxes:
+                pages.append(current_page_boxes)
+                page_index += 1
 
         return LayoutModel(boxes=boxes, pages=pages)
 
-    def _select_header_content(self, properties: SectionProperties | None) -> Optional[HeaderFooterContent]:
-        if not isinstance(properties, SectionProperties):
-            return None
-        return properties.header_default or properties.header_first or properties.header_even
+    def _start_new_page(
+        self,
+        properties: SectionProperties | None,
+        context: LayoutContext,
+        page_index: int,
+        boxes: List[LayoutBox],
+    ) -> List[LayoutBox]:
+        context.cursor_x = context.margin_left
+        context.cursor_y = context.margin_top
 
-    def _select_footer_content(self, properties: SectionProperties | None) -> Optional[HeaderFooterContent]:
+        page_boxes: List[LayoutBox] = []
+        header_box = self._layout_page_header(properties, context, page_index)
+        if header_box:
+            header_box.style["pageIndex"] = page_index
+            boxes.append(header_box)
+            page_boxes.append(header_box)
+
+        return page_boxes
+
+    def _layout_page_header(
+        self,
+        properties: SectionProperties | None,
+        context: LayoutContext,
+        page_index: int,
+    ) -> Optional[LayoutBox]:
+        content = self._select_header_content_for_page(properties, page_index)
+        if not content:
+            return None
+        return self._layout_header_footer(content, context, placement="header")
+
+    def _layout_page_footer(
+        self,
+        properties: SectionProperties | None,
+        context: LayoutContext,
+        page_index: int,
+    ) -> Optional[LayoutBox]:
+        content = self._select_footer_content_for_page(properties, page_index)
+        if not content:
+            return None
+        return self._layout_header_footer(content, context, placement="footer")
+
+    def _select_header_content_for_page(
+        self,
+        properties: SectionProperties | None,
+        page_index: int,
+    ) -> Optional[HeaderFooterContent]:
         if not isinstance(properties, SectionProperties):
             return None
-        return properties.footer_default or properties.footer_first or properties.footer_even
+
+        page_number = page_index + 1
+
+        if properties.title_page and page_number == 1 and properties.header_first:
+            return properties.header_first
+
+        if page_number % 2 == 0 and properties.header_even:
+            return properties.header_even
+
+        if properties.header_default:
+            return properties.header_default
+
+        if page_number == 1 and properties.header_first:
+            return properties.header_first
+
+        if properties.header_even and page_number % 2 == 0:
+            return properties.header_even
+
+        return None
+
+    def _select_footer_content_for_page(
+        self,
+        properties: SectionProperties | None,
+        page_index: int,
+    ) -> Optional[HeaderFooterContent]:
+        if not isinstance(properties, SectionProperties):
+            return None
+
+        page_number = page_index + 1
+
+        if properties.title_page and page_number == 1 and properties.footer_first:
+            return properties.footer_first
+
+        if page_number % 2 == 0 and properties.footer_even:
+            return properties.footer_even
+
+        if properties.footer_default:
+            return properties.footer_default
+
+        if page_number == 1 and properties.footer_first:
+            return properties.footer_first
+
+        if properties.footer_even and page_number % 2 == 0:
+            return properties.footer_even
+
+        return None
+
+    def _page_content_limit(self, context: LayoutContext) -> float:
+        bottom_margin = context.margin_bottom
+        if context.footer_margin > 0:
+            bottom_margin = max(bottom_margin, context.footer_margin)
+        limit = context.page_height - bottom_margin
+        return max(limit, context.margin_top)
 
     def _layout_header_footer(
         self,
@@ -184,6 +326,11 @@ class LayoutCalculator:
                 "rId": content.r_id,
             },
         )
+
+        if placement == "header":
+            container.style.setdefault("zIndex", LAYER_HEADER_Z)
+        else:
+            container.style.setdefault("zIndex", LAYER_FOOTER_Z)
 
         return container
 
@@ -312,6 +459,8 @@ class LayoutCalculator:
             "firstLine": indent.first_line,
         }
 
+        box.style.setdefault("zIndex", LAYER_BODY_Z)
+
         context.cursor_y += box_height + spacing.after
         return box
 
@@ -407,7 +556,9 @@ class LayoutCalculator:
         )
 
         table_spacing = DEFAULT_LINE_HEIGHT_PT * 0.5
+        box.style.setdefault("zIndex", LAYER_BODY_Z)
         context.cursor_y += table_height + table_spacing
+
         return box
 
     def _apply_vertical_merges(
@@ -640,6 +791,17 @@ class LayoutCalculator:
         else:
             context.cursor_y += height + margins["bottom"]
 
+        if floating:
+            if wrap_mode == "behind-text":
+                z_index = LAYER_FLOATING_BEHIND_Z
+            elif wrap_mode == "infront-of-text":
+                z_index = LAYER_FLOATING_FRONT_Z
+            else:
+                z_index = LAYER_FLOATING_Z
+        else:
+            z_index = LAYER_BODY_Z
+
+        box.style.setdefault("zIndex", z_index)
         return box
 
     def _layout_placeholder(self, block, context: LayoutContext) -> LayoutBox:
@@ -654,6 +816,7 @@ class LayoutCalculator:
             style={},
         )
         context.cursor_y += height
+        box.style.setdefault("zIndex", LAYER_BODY_Z)
         return box
 
     # ------------------------------------------------------------------
@@ -1378,10 +1541,13 @@ class LayoutCalculator:
         if not text:
             return [""]
 
-        words = text.split(" ")
-        if not words:
-            return [text]
+        key = (text, round(max_width, 4), round(font_size, 4))
+        cached = self._wrap_cache.get(key)
+        if cached is not None:
+            self._wrap_cache.move_to_end(key)
+            return list(cached)
 
+        words = text.split(" ")
         lines: List[str] = []
         current_line: List[str] = []
         current_width = 0.0
@@ -1389,37 +1555,68 @@ class LayoutCalculator:
 
         for word in words:
             word_width = self._estimate_text_width(word, font_size)
-            projected = current_width + (space_width if current_line else 0.0) + word_width
 
-            if current_line and projected > max_width:
-                lines.append(" ".join(current_line))
-                current_line = [word]
-                current_width = word_width
+            if current_line:
+                projected_width = current_width + space_width + word_width
             else:
+                projected_width = word_width
+
+            if projected_width <= max_width or not current_line:
                 if current_line:
                     current_width += space_width + word_width
                 else:
                     current_width = word_width
                 current_line.append(word)
+            else:
+                lines.append(" ".join(current_line))
+                current_line = [word]
+                current_width = word_width
 
         if current_line:
             lines.append(" ".join(current_line))
 
+        cached_value = tuple(lines)
+        self._wrap_cache[key] = cached_value
+        self._wrap_cache.move_to_end(key)
+        if len(self._wrap_cache) > self._wrap_cache_limit:
+            self._wrap_cache.popitem(last=False)
+
         return lines
 
-    @staticmethod
-    def _estimate_text_width(text: str, font_size: float) -> float:
+    def _estimate_text_width(self, text: str, font_size: float) -> float:
         if not text:
             return 0.0
 
-        average_width_factor = 0.5  # Approximation for Latin alphabets
-        return len(text) * font_size * average_width_factor
+        width = 0.0
+        for char in text:
+            if char in {"\n", "\r"}:
+                continue
 
-    @staticmethod
-    def _normalise_font_size(size: int | float) -> float:
-        if size > 20:
-            return float(size) / 2.0
-        return float(size)
+            factor = CHAR_WIDTH_OVERRIDES.get(char)
+            if factor is None:
+                if char in NARROW_CHARS:
+                    factor = 0.33
+                elif char in WIDE_CHARS:
+                    factor = 0.7
+                elif char.isdigit():
+                    factor = 0.56
+                elif char.isupper():
+                    factor = 0.6
+                elif self._is_double_width_character(char):
+                    factor = 1.0
+                else:
+                    factor = 0.45 if char.islower() else 0.5
+
+            width += factor * font_size
+
+        return width
+
+    def _is_double_width_character(self, char: str) -> bool:
+        codepoint = ord(char)
+        for start, end in DOUBLE_WIDTH_BLOCKS:
+            if start <= codepoint <= end:
+                return True
+        return codepoint >= 0x1F300 and codepoint <= 0x1FAFF
 
     @staticmethod
     def _twips_to_points(value: int | float | None, default: float) -> float:

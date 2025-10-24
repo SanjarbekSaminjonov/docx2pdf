@@ -8,6 +8,7 @@ from docx_renderer.model.elements import (
     ImageElement,
     ParagraphElement,
     RunFragment,
+    HeaderFooterContent,
     SectionProperties,
     TableCell,
     TableElement,
@@ -19,6 +20,11 @@ from docx_renderer.parser.layout_calculator import (
     DEFAULT_PAGE_WIDTH_PT,
     DEFAULT_TABLE_BORDER_WIDTH_PT,
     DEFAULT_TABLE_CELL_PADDING_PT,
+    LAYER_BODY_Z,
+    LAYER_FLOATING_BEHIND_Z,
+    LAYER_FLOATING_FRONT_Z,
+    LAYER_FLOATING_Z,
+    LAYER_HEADER_Z,
     LayoutCalculator,
 )
 
@@ -376,6 +382,148 @@ class LayoutCalculatorTest(unittest.TestCase):
         self.assertEqual(follower["height"], 0.0)
         self.assertEqual(follower["boxes"], [])
         self.assertEqual(follower["baseRow"], merged["rowIndex"])
+
+    def test_first_page_header_precedence(self) -> None:
+        def make_paragraph(text: str) -> ParagraphElement:
+            return ParagraphElement(runs=[RunFragment(text=text)], style_id=None, properties={})
+
+        header_first = HeaderFooterContent(
+            r_id="rIdHeaderFirst",
+            blocks=[make_paragraph("First Header")],
+        )
+        header_default = HeaderFooterContent(
+            r_id="rIdHeaderDefault",
+            blocks=[make_paragraph("Default Header")],
+        )
+
+        body_paragraphs = [make_paragraph(f"Paragraph {idx}") for idx in range(60)]
+
+        props = SectionProperties(title_page=True, header_first=header_first, header_default=header_default)
+        section = DocumentSection(blocks=body_paragraphs, properties=props)
+        tree = DocumentTree(sections=[section])
+        catalog = StylesCatalog({})
+
+        layout = LayoutCalculator(catalog).calculate(tree)
+
+        self.assertGreaterEqual(len(layout.pages), 2)
+
+        first_page_header = next((box for box in layout.pages[0] if box.element_type == "header"), None)
+        second_page_header = next((box for box in layout.pages[1] if box.element_type == "header"), None)
+
+        self.assertIsNotNone(first_page_header)
+        self.assertIsNotNone(second_page_header)
+        assert first_page_header is not None
+        assert second_page_header is not None
+        self.assertEqual(first_page_header.style["rId"], "rIdHeaderFirst")
+        self.assertEqual(second_page_header.style["rId"], "rIdHeaderDefault")
+        self.assertEqual(first_page_header.style["zIndex"], LAYER_HEADER_Z)
+        self.assertEqual(second_page_header.style["zIndex"], LAYER_HEADER_Z)
+
+    def test_even_page_header_overrides_default(self) -> None:
+        def make_paragraph(text: str) -> ParagraphElement:
+            return ParagraphElement(runs=[RunFragment(text=text)], style_id=None, properties={})
+
+        header_default = HeaderFooterContent(
+            r_id="rIdHeaderDefault",
+            blocks=[make_paragraph("Default Header")],
+        )
+        header_even = HeaderFooterContent(
+            r_id="rIdHeaderEven",
+            blocks=[make_paragraph("Even Header")],
+        )
+
+        body_paragraphs = [make_paragraph(f"Body {idx}") for idx in range(90)]
+
+        props = SectionProperties(header_default=header_default, header_even=header_even)
+        section = DocumentSection(blocks=body_paragraphs, properties=props)
+        tree = DocumentTree(sections=[section])
+        catalog = StylesCatalog({})
+
+        layout = LayoutCalculator(catalog).calculate(tree)
+
+        self.assertGreaterEqual(len(layout.pages), 2)
+
+        first_page_header = next((box for box in layout.pages[0] if box.element_type == "header"), None)
+        second_page_header = next((box for box in layout.pages[1] if box.element_type == "header"), None)
+
+        self.assertIsNotNone(first_page_header)
+        self.assertIsNotNone(second_page_header)
+        assert first_page_header is not None
+        assert second_page_header is not None
+        self.assertEqual(first_page_header.style["rId"], "rIdHeaderDefault")
+        self.assertEqual(second_page_header.style["rId"], "rIdHeaderEven")
+        self.assertEqual(first_page_header.style["zIndex"], LAYER_HEADER_Z)
+        self.assertEqual(second_page_header.style["zIndex"], LAYER_HEADER_Z)
+
+    def test_character_width_estimation_distinguishes_scripts(self) -> None:
+        catalog = StylesCatalog({})
+        calculator = LayoutCalculator(catalog)
+
+        narrow = calculator._estimate_text_width("iii", 12.0)
+        wide = calculator._estimate_text_width("WWW", 12.0)
+        digit = calculator._estimate_text_width("000", 12.0)
+        cjk = calculator._estimate_text_width("你", 12.0)
+
+        self.assertLess(narrow, wide)
+        self.assertLess(narrow, digit)
+        self.assertGreaterEqual(cjk, 11.0)
+        self.assertGreater(wide, digit * 0.8)
+
+    def test_wrap_text_uses_cache_for_repeated_inputs(self) -> None:
+        catalog = StylesCatalog({})
+        calculator = LayoutCalculator(catalog)
+
+        first = calculator._wrap_text("repeat words repeat", 72.0, 12.0)
+        cache_size = len(calculator._wrap_cache)
+        second = calculator._wrap_text("repeat words repeat", 72.0, 12.0)
+
+        self.assertEqual(first, second)
+        self.assertEqual(cache_size, len(calculator._wrap_cache))
+
+        calculator._wrap_text("repeat words repeat", 48.0, 12.0)
+        self.assertGreaterEqual(len(calculator._wrap_cache), cache_size + 1)
+
+    def test_image_zindex_respects_wrap_mode(self) -> None:
+        behind_image = ImageElement(
+            r_id="rIdBehind",
+            media_path="word/media/imageBehind.png",
+            width_emu=914400,
+            height_emu=457200,
+            properties={"wrapStyle": "behind", "anchor": {"offset_x": 0.0, "offset_y": 0.0}, "inline": False},
+        )
+        square_image = ImageElement(
+            r_id="rIdSquare",
+            media_path="word/media/imageSquare.png",
+            width_emu=914400,
+            height_emu=457200,
+            properties={"wrapStyle": "square", "anchor": {"offset_x": 36.0, "offset_y": 36.0}, "inline": False},
+        )
+        front_image = ImageElement(
+            r_id="rIdFront",
+            media_path="word/media/imageFront.png",
+            width_emu=914400,
+            height_emu=457200,
+            properties={"wrapStyle": "infront", "anchor": {"offset_x": 72.0, "offset_y": 72.0}, "inline": False},
+        )
+
+        section = DocumentSection(blocks=[behind_image, square_image, front_image], properties=SectionProperties())
+        tree = DocumentTree(sections=[section])
+        catalog = StylesCatalog({})
+
+        layout = LayoutCalculator(catalog).calculate(tree)
+
+        image_boxes = [box for box in layout.boxes if box.element_type == "image"]
+        self.assertEqual(len(image_boxes), 3)
+
+        wraps = {box.style["wrapStyle"]: box for box in image_boxes}
+
+        self.assertIn("behind-text", wraps)
+        self.assertIn("square", wraps)
+        self.assertIn("infront-of-text", wraps)
+
+        self.assertEqual(wraps["behind-text"].style["zIndex"], LAYER_FLOATING_BEHIND_Z)
+        self.assertEqual(wraps["square"].style["zIndex"], LAYER_FLOATING_Z)
+        self.assertEqual(wraps["infront-of-text"].style["zIndex"], LAYER_FLOATING_FRONT_Z)
 
     def test_anchored_image_position_and_wrap(self) -> None:
         image = ImageElement(

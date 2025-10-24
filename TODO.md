@@ -27,13 +27,13 @@ To'liq loyiha ishlashi uchun quyidagi 3 ta logical service kerak bo'ladi:
 - [x] Image va drawing positioning - rasm va shakllarning text bilan nisbati va wrapping behavior (bazaviy inline/square).
 - [x] Advanced wrap variantlari (tight/through/behind-text) va floating anchorlar.
 - [x] Header/footer layout - sahifa boshi va oxirida joylashuvchi elementlarning pozitsiyalari (bazaviy default header/footer).
-- [ ] Z-index va layering - elementlarning bir-birining ustiga chiqishi va qatlamlash tartibini boshqarish.
-- [ ] Font metrics va text measurement - har xil font o'lchamlari va text width/height hisoblash.
-- [ ] Layout caching va optimization - hisoblangan layout ma'lumotlarini cache qilish va performance optimization.
+- [x] Z-index va layering - elementlarning bir-birining ustiga chiqishi va qatlamlash tartibini boshqarish (basic behind/front handling).
+- [x] Font metrics va text measurement - har xil font o'lchamlari va text width/height hisoblash (heuristic glyph widths, double-width detection).
+- [x] Layout caching va optimization - hisoblangan layout ma'lumotlarini cache qilish va performance optimization (paragraph wrap LRU cache).
 
 ### 3. Renderer modulida qilinadigan ishlar:
 
-- [ ] HTML renderer enhancement - to'liq HTML5/CSS3 chiqarish, responsive design, cross-browser compatibility.
+- [x] HTML renderer enhancement - to'liq HTML5/CSS3 chiqarish, responsive design, cross-browser compatibility (page grouping, tables, images, z-index aware).
 - [ ] PDF renderer implementation - direct PDF generation using reportlab yoki similar library.
 - [ ] SVG renderer - vector graphics export uchun SVG format support.
 - [ ] Font embedding va management - custom fontlarni HTML/PDF da to'g'ri ko'rsatish.
@@ -49,7 +49,7 @@ To'liq loyiha ishlashi uchun quyidagi 3 ta logical service kerak bo'ladi:
 - [ ] Configuration management - global settings, user preferences, output options.
 - [ ] Error reporting va logging - batafsil xatolik hisobotlari va debugging information.
 - [ ] Progress tracking - katta fayllar uchun progress bar va status reporting.
-- [ ] Command line interface - terminal orqali ishlatish uchun CLI tool.
+- [x] Command line interface - terminal orqali ishlatish uchun CLI tool.
 - [ ] Web API wrapper - REST API orqali service sifatida ishlatish.
 - [ ] Performance profiling - bottleneck'larni aniqlash va optimization.
 - [ ] Memory management - katta fayllar bilan ishlashda xotira iste'molini optimallashtirish.

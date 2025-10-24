@@ -6,5 +6,8 @@ requires-python = ">=3.11"
 readme = "README.md"
 dependencies = []
 
+[project.scripts]
+docx-render = "docx2pdf.cli:main"
+
 [tool.pytest.ini_options]
 addopts = "-ra"

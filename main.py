@@ -41,34 +41,47 @@ def render_outputs(model: DocumentModel, output_dir: Path, *, html: bool = True,
         PdfRenderer(output_dir / "document.pdf").render(model)
 
 
-def main(docx_file: str, output_dir: Optional[str] = None) -> None:
-    """Run the DOCX → intermediate model → renderer pipeline."""
+def run_pipeline(
+    docx_file: Path | str,
+    *,
+    output_dir: Path | str | None = None,
+    html: bool = True,
+    pdf: bool = False,
+    dump_debug: bool = True,
+) -> Path:
+    """Execute the end-to-end DOCX rendering pipeline and return output directory."""
     docx_path = Path(docx_file).resolve()
     if not docx_path.exists():
         raise FileNotFoundError(f"DOCX file not found: {docx_path}")
 
-    LOGGER.info("Building document model for %s", docx_path.name)
+    LOGGER.info("Building document model for %s", docx_path)
     model = build_document_model(docx_path)
 
+    target_dir: Path
     if output_dir is None:
-        output_dir = docx_path.with_suffix("")
+        target_dir = docx_path.with_suffix("")
+    else:
+        target_dir = Path(output_dir).resolve()
 
-    output_path = Path(output_dir).resolve()
-    LOGGER.info("Rendering outputs into %s", output_path)
-    render_outputs(model, output_path)
+    LOGGER.info("Rendering outputs into %s", target_dir)
+    render_outputs(model, target_dir, html=html, pdf=pdf)
 
-    DebugDumper(output_path / "debug").dump(model)
+    if dump_debug:
+        DebugDumper(target_dir / "debug").dump(model)
+
+    return target_dir
+
+
+def main(docx_file: str, output_dir: Optional[str] = None) -> None:
+    """Run the DOCX → intermediate model → renderer pipeline."""
+    run_pipeline(docx_file, output_dir=output_dir, html=True, pdf=False, dump_debug=True)
 
 
 if __name__ == "__main__":  # pragma: no cover
-    import argparse
+    import importlib
 
-    parser = argparse.ArgumentParser(description="Render DOCX files into HTML/PDF using a flattened model")
-    parser.add_argument("docx_file", help="Path to the input .docx file")
-    parser.add_argument("--output", help="Directory to write generated artifacts")
-    parser.add_argument("--pdf", action="store_true", help="Generate a PDF output as well as HTML")
-
-    args = parser.parse_args()
-    doc_model = build_document_model(Path(args.docx_file))
-    render_outputs(doc_model, Path(args.output or Path(args.docx_file).with_suffix("")), html=True, pdf=args.pdf)
-    DebugDumper(Path(args.output or Path(args.docx_file).with_suffix("")) / "debug").dump(doc_model)
+    try:
+        cli_main = importlib.import_module("docx2pdf.cli").main
+    except ModuleNotFoundError:  # Running as a script without package install
+        from cli import main as cli_main  # type: ignore
+    raise SystemExit(cli_main())

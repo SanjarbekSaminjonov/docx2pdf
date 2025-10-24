@@ -20,6 +20,7 @@ class Namespaces:
 
 Namespaces.WORD = {  # type: ignore[attr-defined]
     "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
 Namespaces.RELS = {  # type: ignore[attr-defined]
     "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
