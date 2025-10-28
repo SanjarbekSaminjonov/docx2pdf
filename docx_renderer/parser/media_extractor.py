@@ -254,7 +254,7 @@ class MediaExtractor:
 class MediaResolver:
     """Maps relationship identifiers to actual media payloads."""
 
-    def __init__(self, relationships: Relationships, media_catalog: MediaCatalog) -> None:
+    def __init__(self, relationships: Relationships, media_catalog: Union[MediaCatalog, Dict[str, bytes]]) -> None:
         self._relationships = relationships
         self._media_catalog = media_catalog
 
@@ -265,14 +265,26 @@ class MediaResolver:
             return None
         
         # Try to get from media catalog first
-        asset = self._media_catalog.get_by_id(r_id)
-        if asset:
-            return asset.binary_data
-        
-        # Fallback to legacy lookup
+        asset = None
+        if hasattr(self._media_catalog, "get_by_id"):
+            asset = self._media_catalog.get_by_id(r_id)
+            if asset is not None and hasattr(asset, "binary_data"):
+                return asset.binary_data
+            if asset is not None and not hasattr(asset, "binary_data"):
+                return asset  # type: ignore[return-value]
+
         target = rel.resolved_target or rel.target
-        asset = self._media_catalog.get_by_target(target)
-        return asset.binary_data if asset else None
+        if hasattr(self._media_catalog, "get_by_target"):
+            asset = self._media_catalog.get_by_target(target)
+            if asset is not None and hasattr(asset, "binary_data"):
+                return asset.binary_data
+            if asset is not None and not hasattr(asset, "binary_data"):
+                return asset  # type: ignore[return-value]
+
+        if isinstance(self._media_catalog, dict):
+            return self._media_catalog.get(target)
+
+        return None
 
 
 def extract_media_from_package(package: DocxPackage, relationships: Relationships) -> MediaCatalog:

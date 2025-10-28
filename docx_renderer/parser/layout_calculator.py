@@ -886,14 +886,14 @@ class LayoutCalculator:
         if isinstance(properties, dict) and "fontSize" in properties:
             size = properties["fontSize"]
             if isinstance(size, (int, float)):
-                return self._normalise_font_size(size)
+                return self._normalise_font_size(size, half_points=False)
 
         for node in self._get_property_nodes(properties):
             tag = node.get("tag", "")
             if tag.endswith("sz") or tag.endswith("szCs"):
                 value = self._parse_int_attribute(node, "val")
                 if value is not None:
-                    return self._normalise_font_size(value)
+                    return self._normalise_font_size(value, half_points=True)
 
         return None
 
@@ -904,14 +904,14 @@ class LayoutCalculator:
         if "fontSize" in style.properties:
             size = style.properties["fontSize"]
             if isinstance(size, (int, float)):
-                return self._normalise_font_size(size)
+                return self._normalise_font_size(size, half_points=False)
 
         for node in style.properties.get("rPr", []):
             tag = node.get("tag", "")
             if tag.endswith("sz") or tag.endswith("szCs"):
                 value = self._parse_int_attribute(node, "val")
                 if value is not None:
-                    return self._normalise_font_size(value)
+                    return self._normalise_font_size(value, half_points=True)
         return None
 
     def _extract_spacing_info(self, properties) -> SpacingInfo:
@@ -1014,6 +1014,22 @@ class LayoutCalculator:
             if tag.endswith(local_tag):
                 return node
         return None
+
+    def _normalise_font_size(self, value: float, *, half_points: bool) -> float:
+        """Convert font size value into points using heuristics."""
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return DEFAULT_FONT_SIZE_PT
+
+        if numeric <= 0:
+            return DEFAULT_FONT_SIZE_PT
+
+        if half_points:
+            numeric = numeric / 2.0
+
+        # Clamp to a sensible range to avoid pathological values.
+        return max(4.0, min(numeric, 96.0))
 
     def _parse_twips_attribute(self, node: dict, local_name: str) -> Optional[float]:
         value = self._get_attribute(node, local_name)

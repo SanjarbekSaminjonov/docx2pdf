@@ -49,7 +49,7 @@ class DocumentParser:
         for child in list(body):
             tag = self._strip_namespace(child.tag)
             if tag == "p":
-                blocks.append(self._parse_paragraph(child))
+                blocks.extend(self._parse_paragraph(child))
             elif tag == "tbl":
                 blocks.append(self._parse_table(child))
             elif tag == "sectPr":
@@ -63,7 +63,7 @@ class DocumentParser:
         section_parser = SectionParser(self._package, self._styles, self._numbering)
         return section_parser.parse_sections(blocks)
 
-    def _parse_paragraph(self, paragraph_el: ET.Element) -> ParagraphElement:
+    def _parse_paragraph(self, paragraph_el: ET.Element) -> List[BlockElement]:
         runs: List[RunFragment] = []
         bookmarks: List[Bookmark] = []
         
@@ -90,13 +90,38 @@ class DocumentParser:
             else:
                 LOGGER.debug("Skipping paragraph child element: %s", tag)
         
-        return ParagraphElement(
+        paragraph = ParagraphElement(
             runs=runs,
             style_id=style_id,
             properties=paragraph_props,
             numbering=numbering,
             bookmarks=bookmarks,
         )
+
+        blocks: List[BlockElement] = []
+        drawings = [fragment.drawing for fragment in runs if fragment.drawing is not None]
+        has_text = any((fragment.text or "").strip() for fragment in runs)
+
+        if has_text or not drawings:
+            blocks.append(paragraph)
+
+        for drawing in drawings:
+            media_path = drawing.target or ""
+            properties: Dict[str, object] = {
+                "wrapStyle": "inline" if drawing.inline else "square",
+                "description": drawing.description,
+            }
+            image = ImageElement(
+                r_id=drawing.r_id,
+                media_path=media_path,
+                width_emu=drawing.width_emu,
+                height_emu=drawing.height_emu,
+                properties=properties,
+                data=drawing.data,
+            )
+            blocks.append(image)
+
+        return blocks
 
     def _parse_table(self, table_el: ET.Element) -> TableElement:
         rows: List[TableRow] = []
@@ -116,7 +141,7 @@ class DocumentParser:
                 for child in list(cell_el):
                     tag = self._strip_namespace(child.tag)
                     if tag == "p":
-                        cell_content.append(self._parse_paragraph(child))
+                        cell_content.extend(self._parse_paragraph(child))
                     elif tag == "tbl":
                         cell_content.append(self._parse_table(child))
                     elif tag not in ["tcPr"]:  # Skip cell properties

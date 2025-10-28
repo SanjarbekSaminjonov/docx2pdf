@@ -8,6 +8,8 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 from docx_renderer.model.document_model import DocumentModel
 from docx_renderer.model.elements import LayoutBox, MediaAsset
 
+POINT_TO_PX = 96.0 / 72.0
+
 
 class HtmlRenderer:
     """Produce an HTML representation of the calculated layout."""
@@ -24,34 +26,45 @@ class HtmlRenderer:
         if not pages:
             pages = [list(model.layout.boxes)]
 
-        rendered_pages = [self._render_page(page_index, page_boxes, model) for page_index, page_boxes in enumerate(pages)]
+        rendered_pages = [
+            self._render_page(page_index, page_boxes, model)
+            for page_index, page_boxes in enumerate(pages)
+        ]
         body = "\n".join(rendered_pages)
 
-        return """<!DOCTYPE html>
+        # default paragraph font in points -> convert to CSS pixels for the
+        # template so browser defaults match the layout engine's units
+        default_paragraph_font = self._format_px(12.0)
+
+        template = """<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>DOCX Preview</title>
-  <style>
-    :root { color-scheme: light; }
-    body { margin: 0; padding: 24px; background: #f5f5f5; font-family: "Segoe UI", Arial, sans-serif; }
-    .docx-document { margin: 0 auto; max-width: 900px; }
-    .docx-page { position: relative; margin: 24px auto; background: #ffffff; box-shadow: 0 2px 18px rgba(0, 0, 0, 0.12); box-sizing: border-box; overflow: visible; }
-    .docx-box { position: absolute; box-sizing: border-box; }
-    .docx-box.docx-flow { position: relative; }
-    .docx-paragraph { white-space: pre-wrap; line-height: 1.4; font-size: 12pt; }
-    .docx-table table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .docx-table td { vertical-align: top; }
-    .docx-image img { display: block; object-fit: contain; }
-  </style>
+    <meta charset="utf-8" />
+    <title>DOCX Preview</title>
+    <style>
+        :root { color-scheme: light; }
+        body { margin: 0; padding: 24px; background: #f5f5f5; font-family: "Segoe UI", Arial, sans-serif; }
+        .docx-document { margin: 0 auto; max-width: 900px; }
+        .docx-page { position: relative; margin: 24px auto; background: #ffffff; box-shadow: 0 2px 18px rgba(0, 0, 0, 0.12); box-sizing: border-box; overflow: visible; }
+        /* allow overflowing text to be visible rather than clipped */
+        .docx-box { position: absolute; box-sizing: border-box; overflow: visible; }
+        .docx-box.docx-flow { position: relative; }
+        /* improve wrapping and legibility */
+        .docx-paragraph { white-space: pre-wrap; line-height: 1.50; font-size: %s; overflow-wrap: anywhere; word-break: break-word; hyphens: auto; }
+        .docx-table table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .docx-table td { vertical-align: top; word-break: break-word; }
+        .docx-image img { display: block; object-fit: contain; max-width: 100%%; height: auto; }
+    </style>
 </head>
 <body>
-  <main class="docx-document">
+    <main class="docx-document">
 {body}
-  </main>
+    </main>
 </body>
 </html>
 """
+        # inject the computed default paragraph font-size into the template
+        return template.replace("%s", default_paragraph_font).replace("{body}", body)
 
     def _render_page(self, page_index: int, boxes: Sequence[LayoutBox], model: DocumentModel) -> str:
         width, height = self._measure_page_dimensions(boxes)
@@ -123,8 +136,50 @@ class HtmlRenderer:
         if indent.get("firstLine"):
             style["text-indent"] = self._format_px(indent["firstLine"])
 
+        # Map font-size and line-height from layout (points) into CSS pixels so
+        # browser text metrics match the layout engine. Fall back to the global
+        # defaults when values are missing.
+        font_size_pt = None
+        if isinstance(box.style, dict):
+            # layout may provide font size in 'fontSize' (points)
+            maybe = box.style.get("fontSize") or box.style.get("font_size")
+            try:
+                font_size_pt = float(maybe) if maybe is not None else None
+            except Exception:
+                font_size_pt = None
+
+        if font_size_pt:
+            style["font-size"] = self._format_px(font_size_pt)
+
+        # If layout provides explicit leading/lineHeight (in points) convert to
+        # a unitless CSS line-height ratio when possible, otherwise set px.
+        line_height_pt = None
+        if isinstance(box.style, dict):
+            maybe_lh = box.style.get("lineHeight") or box.style.get("leading")
+            try:
+                line_height_pt = float(maybe_lh) if maybe_lh is not None else None
+            except Exception:
+                line_height_pt = None
+
+        if line_height_pt and font_size_pt:
+            # unitless ratio preserves scaling across fonts
+            ratio = line_height_pt / font_size_pt if font_size_pt > 0 else None
+            if ratio:
+                # format with 2 decimal places
+                style["line-height"] = f"{ratio:.2f}"
+        elif line_height_pt:
+            style["line-height"] = self._format_px(line_height_pt)
+        else:
+            # No explicit line-height provided by the layout; don't emit an
+            # inline default here so the template's CSS default (which we
+            # recently increased for better readability) can take effect.
+            # Leave it unset.
+            pass
+
+        # Improve text wrapping in cells/flows to avoid overflow collisions
         style.setdefault("white-space", "pre-wrap")
-        style.setdefault("line-height", "1.4")
+        # prefer stronger breaking rules to avoid collisions in narrow cells
+        style.setdefault("overflow-wrap", "anywhere")
 
         style_attr = self._style_to_string(style)
 
@@ -321,9 +376,9 @@ class HtmlRenderer:
         return "; ".join(f"{key}: {value}" for key, value in style.items() if value)
 
     def _format_px(self, value: float) -> str:
-        return f"{value:.2f}px"
+        return f"{value * POINT_TO_PX:.2f}px"
 
     def _border_css(self, width: float | None) -> str:
         if not width or width <= 0:
             return "none"
-        return f"{width:.2f}px solid #444"
+        return f"{width * POINT_TO_PX:.2f}px solid #444"

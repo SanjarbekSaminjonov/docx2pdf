@@ -2,6 +2,7 @@
 import unittest
 from xml.etree import ElementTree as ET
 
+from docx_renderer.model.elements import DrawingReference, ImageElement, RunFragment
 from docx_renderer.model.numbering_model import NumberingCatalog
 from docx_renderer.model.style_model import StylesCatalog
 from docx_renderer.parser.document_parser import DocumentParser
@@ -156,6 +157,40 @@ class DocumentParserTest(unittest.TestCase):
         self.assertEqual(doc_tree.blocks[0].runs[0].text, "First paragraph")
         self.assertEqual(len(doc_tree.blocks[1].rows), 1)
         self.assertEqual(doc_tree.blocks[2].runs[0].text, "Second paragraph")
+
+    def test_paragraph_with_drawing_yields_image_block(self) -> None:
+        xml = """
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:body>
+            <w:p>
+              <w:r />
+            </w:p>
+          </w:body>
+        </w:document>
+        """
+
+        class DrawingParagraphParser(DocumentParser):
+            def _parse_run(self, run_el):  # type: ignore[override]
+                drawing = DrawingReference(
+                    r_id="rId42",
+                    target="word/media/image1.png",
+                    description="",
+                    width_emu=914400,
+                    height_emu=914400,
+                    inline=True,
+                    data=None,
+                )
+                return [RunFragment(text="", drawing=drawing)]
+
+        package = MockDocxPackage(xml)
+        parser = DrawingParagraphParser(package, self.styles, self.numbering)
+        doc_tree = parser.parse()
+
+        self.assertEqual(len(doc_tree.blocks), 1)
+        self.assertIsInstance(doc_tree.blocks[0], ImageElement)
+        image = doc_tree.blocks[0]
+        self.assertEqual(image.r_id, "rId42")
+        self.assertEqual(image.media_path, "word/media/image1.png")
 
 
 if __name__ == "__main__":  # pragma: no cover
